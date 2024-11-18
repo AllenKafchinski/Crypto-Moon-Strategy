@@ -1,0 +1,92 @@
+// This Pine Script™ code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+// © allenlk
+
+//@version=5
+//Moon Strategy - ATR Stop-Loss Grid with RSI Re-Entry
+strategy("Moon Strategy", overlay=true, initial_capital=1000, default_qty_type=strategy.percent_of_equity, default_qty_value=100)
+
+// Input parameters
+atrPeriod = input(14, "ATR Period")
+atrMultiplier1 = input.float(2.5, "First Grid ATR Multiplier")
+atrMultiplier2 = input.float(3.0, "Second Grid ATR Multiplier")
+atrMultiplier3 = input.float(3.5, "Third Grid ATR Multiplier")
+atrMultiplier4 = input.float(4.0, "Fourth Grid ATR Multiplier")
+rsiPeriod = input(14, "RSI Period")
+rsiOversold = input(30, "RSI Oversold Level")
+rsiSlopeLength = input(4, "RSI Slope Length")
+
+// Grid levels for position sizing
+gridLevel1 = input.float(0.25, "First Grid Exit Size (25%)")
+gridLevel2 = input.float(0.25, "Second Grid Exit Size (25%)")
+gridLevel3 = input.float(0.25, "Third Grid Exit Size (25%)")
+gridLevel4 = input.float(0.25, "Fourth Grid Exit Size (25%)")
+
+// Plot RSI settings
+plotRSI = input(true, "Plot RSI")
+
+// Variables for position tracking
+var float initialSize = 0.0
+var float highestPrice = 0.0
+var int exitLevel = 0
+
+// Calculate indicators
+atr = ta.atr(atrPeriod)
+rsi = ta.rsi(close, rsiPeriod)
+rsiSlope = rsi - rsi[rsiSlopeLength]
+
+// Update highest price when in position
+if strategy.position_size > 0
+    highestPrice := math.max(highestPrice, high)
+
+// Calculate grid stop levels based on highest price
+float stopLevel1 = highestPrice - (atr * atrMultiplier1)
+float stopLevel2 = highestPrice - (atr * atrMultiplier2)
+float stopLevel3 = highestPrice - (atr * atrMultiplier3)
+float stopLevel4 = highestPrice - (atr * atrMultiplier4)
+
+// Entry conditions
+longCondition = rsi < rsiOversold and rsiSlope > 0 
+
+// Calculate remaining position percentage
+remainingPosition = strategy.position_size / initialSize * 100
+
+// Exit conditions based on grid levels
+bool exitLevel1Condition = close < stopLevel1 and strategy.position_size > 0 and exitLevel == 0
+bool exitLevel2Condition = close < stopLevel2 and strategy.position_size > 0 and exitLevel == 1 and remainingPosition >= 75
+bool exitLevel3Condition = close < stopLevel3 and strategy.position_size > 0 and exitLevel == 2 and remainingPosition >= 50
+bool exitLevel4Condition = close < stopLevel4 and strategy.position_size > 0 and exitLevel == 3 and remainingPosition >= 25
+
+// Strategy execution
+if (longCondition)
+    strategy.entry("Long", strategy.long)
+    initialSize := strategy.position_size
+    exitLevel := 0
+    highestPrice := high
+
+if (exitLevel1Condition)
+    strategy.order("Exit1", strategy.short, qty=math.abs(initialSize) * gridLevel1)
+    exitLevel := 1
+
+if (exitLevel2Condition)
+    strategy.order("Exit2", strategy.short, qty=math.abs(initialSize) * gridLevel2)
+    exitLevel := 2
+
+if (exitLevel3Condition)
+    strategy.order("Exit3", strategy.short, qty=math.abs(initialSize) * gridLevel3)
+    exitLevel := 3
+
+if (exitLevel4Condition)
+    strategy.close("Long")
+    exitLevel := 0
+    highestPrice := 0.0
+
+// Plot indicators in global scope
+plot(stopLevel1, "Stop Level 1", color=color.red, style=plot.style_stepline)
+plot(stopLevel2, "Stop Level 2", color=color.orange, style=plot.style_stepline)
+plot(stopLevel3, "Stop Level 3", color=color.yellow, style=plot.style_stepline)
+plot(stopLevel4, "Stop Level 4", color=color.purple, style=plot.style_stepline)
+plot(plotRSI ? rsi : na, "RSI", color=color.blue, display=display.pane)
+hline(rsiOversold, "RSI Oversold", color=color.red, display=display.all)
+
+// Plot highest price for reference
+plot(strategy.position_size > 0 ? highestPrice : na, "Highest Price", color=color.green, style=plot.style_circles)
